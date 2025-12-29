@@ -39,15 +39,15 @@ r'_i = s \cdot r_i,\quad s \in \mathrm{VOL\_SCALES}
 Volatility recomputed on different recent windows $L$:
 
 ```math
-\sigma(L) = \operatorname{std}(r_{n-L:\,n})
+\sigma(L) = \mathrm{std}(r_{n-L:\,n})
 ```
 
 - **Outlier dominance** (remove top-$k$ absolute jumps; default $k=1$)  
 
 ```math
 r = \ln\!\left(\frac{p_{i+1}}{p_i}\right),\quad
-J=\operatorname{arg\,topk}_i |r_i|,\quad
-\sigma_{\mathrm{no\_outlier}}=\operatorname{std}\!\bigl(r_{i\notin J}\bigr)
+J=i \in \mathrm{topk}(|r_i|),\quad
+\sigma_{\mathrm{no\_outlier}}=\mathrm{std}\!\bigl(r_{i\notin J}\bigr)
 ```
 
 - **Overnight gap risk**
@@ -55,7 +55,7 @@ J=\operatorname{arg\,topk}_i |r_i|,\quad
 ```math
 g_d = \ln\left(\frac{p_{\text{open},d}}{p_{\text{close},d-1}}\right),
 \quad
-\sigma_{\mathrm{overnight}} = \operatorname{std}(g_d)
+\sigma_{\mathrm{overnight}} = \mathrm{std}(g_d)
 ```
 
 - **Execution friction**  
@@ -69,8 +69,8 @@ p'_{\mathrm{end}}=p_{\mathrm{end}}\cdot \mathrm{cost}
 - **Price-definition sensitivity** (Close vs AdjClose, if both exist)
 
 ```math
-\mathrm{vol\_ratio}=\frac{\operatorname{std}(r_{\mathrm{AdjClose}})}{\operatorname{std}(r_{\mathrm{Close}})},\quad
-\Delta\mu=\operatorname{mean}(r_{\mathrm{AdjClose}})-\operatorname{mean}(r_{\mathrm{Close}})
+\mathrm{vol\_ratio}=\frac{\mathrm{std}(r_{\mathrm{AdjClose}})}{\mathrm{std}(r_{\mathrm{Close}})},\quad
+\Delta\mu=\mathrm{mean}(r_{\mathrm{AdjClose}})-\mathrm{mean}(r_{\mathrm{Close}})
 ```
 
 - **Liquidity regime sensitivity** (Volume proxy; bottom quantile $q$)
@@ -78,14 +78,14 @@ p'_{\mathrm{end}}=p_{\mathrm{end}}\cdot \mathrm{cost}
 ```math
 \theta=Q_q(\mathrm{Volume}),\quad
 \text{mask}_i=(\mathrm{Volume}_{i+1}\le\theta),\quad
-\mathrm{vol\_ratio_{lowliq}}=\frac{\operatorname{std}(r_i\mid \text{mask}_i)}{\operatorname{std}(r)}
+\mathrm{vol\_ratio_{lowliq}}=\frac{\mathrm{std}(r_i\mid \text{mask}_i)}{\mathrm{std}(r)}
 ```
 
 - **Market-factor dominance** (benchmark merge required: $\mathrm{Close}_{\mathrm{BENCH}}$)
 
 ```math
-\beta=\frac{\operatorname{cov}(r_a,r_b)}{\operatorname{var}(r_b)},\quad
-\alpha=\operatorname{mean}(r_a)-\beta\,\operatorname{mean}(r_b),\quad
+\beta=\frac{\mathrm{cov}(r_a,r_b)}{\mathrm{var}(r_b)},\quad
+\alpha=\mathrm{mean}(r_a)-\beta\,\mathrm{mean}(r_b),\quad
 R^2=1-\frac{\sum (r_a-\hat r_a)^2}{\sum (r_a-\bar r_a)^2}
 ```
 
@@ -142,7 +142,7 @@ n_{\mathrm{eff}} \approx \frac{n}{1 + 2\sum_{k=1}^{K}\rho_k}
 - **Block bootstrap CI for volatility**  
 
 ```math
-\sigma^{*(b)}=\operatorname{std}(r^{*(b)}),\quad
+\sigma^{*(b)}=\mathrm{std}(r^{*(b)}),\quad
 \mathrm{CI}=\bigl[Q_{\alpha}(\sigma^*),\,Q_{1-\alpha}(\sigma^*)\bigr]
 ```
 
