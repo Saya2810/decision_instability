@@ -1,4 +1,4 @@
-## What do we learn from the perturbation overlay plot?
+##the perturbation overlay plot
 
 - Same shape → dynamics are stable  
 - Diverging / crossing curves → decision unstable  
@@ -13,7 +13,7 @@ The plot shows **how my decision can fail**, not what will happen.
 
 ---
 
-## What this analysis actually computes (essential only)
+## analysis computation
 
 **Core object**
 - Log returns:
