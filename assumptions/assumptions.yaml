@@ -59,7 +59,8 @@ returns:
   # Why: hourly bars reduce microstructure effects, but they don't fully remove them (bid-ask bounce, discreteness).
   demeaning_method: none
   # Why: by default we do not subtract mean; short-horizon means are noisy and can mislead.
-
+  autocorr_max_lag: 12
+  # Why: detects serial dependence; reduces effective sample size for uncertainty estimates.
 volatility:
   estimator: standard_deviation
   # Why: simplest volatility proxy; robust alternatives exist (MAD, Garman-Klass, Parkinson, EWMA).
@@ -75,6 +76,10 @@ volatility:
   # Why: standard finance choice for daily; for hourly, lambda may need recalibration.
   intraday_seasonality_ignored: false
   # Why: volatility differs by hour (open/close), ignoring can bias estimates.
+  robust_estimator: mad
+  # Why: std is fragile under heavy tails; MAD is a robust scale estimate.
+  mad_to_sigma: 1.4826
+  # Why: converts MAD to sigma-equivalent (normal calibration), used as robust volatility proxy.
 
 drift:
   assume_zero_drift_short_horizon: true
@@ -95,6 +100,10 @@ market_structure:
   # Why: some venues have price limits; for US equities it's rare, but matters in stress.
   survivorship_bias_ignored: true
   # Why: single ticker analysis avoids index survivorship issues; but if you later analyze universes, this must change.
+  cusum_enabled: true
+  # Why: simple regime-change proxy; detects if return process shifted within sample.
+  cusum_threshold: 8.0
+  # Why: heuristic threshold in robust-sigma units; higher -> fewer false alarms.
 
 liquidity:
   proxy: volume
@@ -149,12 +158,40 @@ risk_model:
   # Why: assuming normality is often wrong; keep it off by default.
   stress_scenarios_enabled: true
   # Why: uncertainty engines should include stress tests, not just smooth perturbations.
+  bootstrap_enabled: true
+  # Why: non-parametric uncertainty on volatility/metrics (no Gaussian assumption).
+  bootstrap_runs: 500
+  # Why: rough CI in v0; increase later if needed.
+  block_bootstrap_blocklen: 6
+  # Why: block bootstrap preserves short-range autocorrelation (physics time-series style).
+  bootstrap_ci: [0.05, 0.95]
+  # Why: default 90% CI bounds.
 
 decision:
   horizon_hours: 24
   # Why: defines what "future relevance" means for this decision engine.
   decision_type: directional
   # Why: directional vs allocation vs hedging changes what is "stable".
+    min_rows: 200
+  # Why: minimum number of bars required before trusting dominance metrics.
+  min_trading_days: 20
+  # Why: minimum distinct trading days so overnight/regime tests are meaningful.
+
+  action_semantics:
+    buy: "enter or increase a long position"
+    # Why: define what “act” means in plain language.
+    sell: "reduce or exit a long position (or go short, if your rules allow it)"
+    # Why: explicit meaning; avoids ambiguity.
+    hold: "do nothing / wait for more data"
+    # Why: HOLD is a valid output under high uncertainty.
+
+  rule:
+    kind: momentum
+    # Why: placeholder mapping data -> BUY/SELL/HOLD semantics (not advice).
+    horizon_hours: 24
+    threshold_sigma: 0.5
+    # Why: require signal magnitude vs volatility to avoid noise-triggered acting.
+    
   stability_required: true
   # Why: engine is meant to output validity boundaries; stability is the central contract.
   instability_threshold: undefined

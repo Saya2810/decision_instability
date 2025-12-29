@@ -1,7 +1,7 @@
 DECISION VALIDITY REPORT
 ========================
 
-Generated (UTC): 2025-12-29 14:35:39
+Generated (UTC): 2025-12-29 17:25:16
 
 SUMMARY STATEMENT
 -----------------
@@ -24,13 +24,13 @@ DOMINANT UNCERTAINTY SOURCES
 
 NUMERICAL SUMMARY
 -----------------
- - window_length_volatility: Dict(6 => 0.0015689106375135606, 12 => 0.0027357345599965583, 24 => 0.002236917009589487)
- - base_volatility: 0.002236917009589487
- - outlier_removed_volatility: 0.0017940702548301256
+ - window_length_volatility: Dict(6 => 0.0017287791856891246, 12 => 0.002735519044043407, 24 => 0.0022177625430776643)
+ - base_volatility: 0.0037126634970965546
+ - outlier_removed_volatility: 0.0033507773228710533
  - liquidity: Dict{Symbol, Bool}(:available => 0)
  - price_source: Dict{Symbol, Bool}(:available => 0)
  - market_factor: Dict{Symbol, Bool}(:benchmark_enabled => 0, :available => 0)
- - overnight_gap_std: 0.004595050045052901
+ - overnight_gap_std: 0.004565551355941477
 
 ASSUMPTIONS APPLIED
 -------------------
