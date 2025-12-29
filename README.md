@@ -7,7 +7,6 @@ project/
 │   ├── historical_prices.csv
 │   └── download_data.py
 │
-├ hooking up assumptions:
 ├── assumptions/
 │   └── assumptions.yaml
 │
