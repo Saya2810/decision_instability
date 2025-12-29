@@ -19,9 +19,10 @@ The plot shows **how my decision can fail**, not what will happen.
 
 **Core object**
 - Log returns:
-$$
+
+```math
 r_i = \ln\left(\frac{p_{i+1}}{p_i}\right)
-$$
+```
 
 All uncertainty tests operate on perturbations of $r_i$.
 
@@ -29,69 +30,79 @@ All uncertainty tests operate on perturbations of $r_i$.
 
 **Uncertainty channels tested**
 - **Volatility regime error**  
-$$
+
+```math
 r'_i = s \cdot r_i,\quad s \in \mathrm{VOL\_SCALES}
-$$
+```
 
 - **Window sensitivity**  
-Volatility recomputed on different recent windows \( L \):
-$$
-\sigma(L) = \operatorname{std}(r_{n-L:\,n})
-$$
+Volatility recomputed on different recent windows $L$:
 
-- **Outlier dominance** (remove top-\(k\) absolute jumps; default \(k=1\))  
-$$
+```math
+\sigma(L) = \operatorname{std}(r_{n-L:\,n})
+```
+
+- **Outlier dominance** (remove top-$k$ absolute jumps; default $k=1$)  
+
+```math
 r = \ln\!\left(\frac{p_{i+1}}{p_i}\right),\quad
 J=\operatorname{arg\,topk}_i |r_i|,\quad
 \sigma_{\mathrm{no\_outlier}}=\operatorname{std}\!\bigl(r_{i\notin J}\bigr)
-$$
+```
 
 - **Overnight gap risk**
-$$
+
+```math
 g_d = \ln\left(\frac{p_{\text{open},d}}{p_{\text{close},d-1}}\right),
 \quad
 \sigma_{\mathrm{overnight}} = \operatorname{std}(g_d)
-$$
+```
 
 - **Execution friction**  
 Small transaction costs applied as a stressor.
-$$
+
+```math
 \mathrm{cost}=\left(1-\frac{\mathrm{spread\_bps}}{10^4}\right)^{\mathrm{trades}},\quad
 p'_{\mathrm{end}}=p_{\mathrm{end}}\cdot \mathrm{cost}
-$$
+```
 
 - **Price-definition sensitivity** (Close vs AdjClose, if both exist)
-$$
+
+```math
 \mathrm{vol\_ratio}=\frac{\operatorname{std}(r_{\mathrm{AdjClose}})}{\operatorname{std}(r_{\mathrm{Close}})},\quad
 \Delta\mu=\operatorname{mean}(r_{\mathrm{AdjClose}})-\operatorname{mean}(r_{\mathrm{Close}})
-$$
+```
 
-- **Liquidity regime sensitivity** (Volume proxy; bottom quantile \(q\))
-$$
+- **Liquidity regime sensitivity** (Volume proxy; bottom quantile $q$)
+
+```math
 \theta=Q_q(\mathrm{Volume}),\quad
 \text{mask}_i=(\mathrm{Volume}_{i+1}\le\theta),\quad
 \mathrm{vol\_ratio_{lowliq}}=\frac{\operatorname{std}(r_i\mid \text{mask}_i)}{\operatorname{std}(r)}
-$$
+```
 
-- **Market-factor dominance** (benchmark merge required: \(\mathrm{Close}_{\mathrm{BENCH}}\))
-$$
+- **Market-factor dominance** (benchmark merge required: $\mathrm{Close}_{\mathrm{BENCH}}$)
+
+```math
 \beta=\frac{\operatorname{cov}(r_a,r_b)}{\operatorname{var}(r_b)},\quad
 \alpha=\operatorname{mean}(r_a)-\beta\,\operatorname{mean}(r_b),\quad
 R^2=1-\frac{\sum (r_a-\hat r_a)^2}{\sum (r_a-\bar r_a)^2}
-$$
+```
 
 ---
 
 **Aggregation**
-- All perturbations operate on \(r_i\) and are reconstructed into a price path:
-$$
+- All perturbations operate on $r_i$ and are reconstructed into a price path:
+
+```math
 p'_1=p_1,\quad
 p'_{k}=p_1\cdot \exp\!\left(\sum_{i=1}^{k-1} r'_i\right)
-$$
+```
 - The red curve is the **worst‑case envelope**:
-$$
+
+```math
 p^{\text{worst}}(t) = \min_{\text{perturbations}} p(t)
-$$
+```
 
 ---
 
@@ -104,37 +115,43 @@ $$
   - unstable
 - This maps to a conservative **decision invalidity probability**.
 Dominance scores used by the verdict (v0 heuristics):
-$$
+
+```math
 D_{\mathrm{win}}=\frac{\max_L\sigma(L)-\min_L\sigma(L)}{\sigma_{\mathrm{base}}},\quad
 D_{\mathrm{overnight}}=\frac{\sigma_{\mathrm{overnight}}}{\sigma_{\mathrm{base}}},\quad
 D_{\mathrm{outlier}}=\frac{\sigma_{\mathrm{base}}-\sigma_{\mathrm{no\_outlier}}}{\sigma_{\mathrm{base}}}
-$$
-$$
+```
+
+```math
 D_{\mathrm{serial}}=1-\frac{n_{\mathrm{eff}}}{n},\quad
 D_{\mathrm{regime}}=\frac{\mathrm{CUSUM}}{\mathrm{CUSUM\_threshold}}
-$$
+```
 ---
 **Robust volatility (MAD → sigma)**  
-$$
+
+```math
 \sigma_{\mathrm{MAD}} = c \cdot \mathrm{median}\!\left(\left|r_i-\mathrm{median}(r)\right|\right),\quad c\approx 1.4826
-$$
+```
 
 - **Effective sample size (serial dependence penalty)**  
-$$
+
+```math
 n_{\mathrm{eff}} \approx \frac{n}{1 + 2\sum_{k=1}^{K}\rho_k}
-$$
+```
 
 - **Block bootstrap CI for volatility**  
-$$
+
+```math
 \sigma^{*(b)}=\operatorname{std}(r^{*(b)}),\quad
 \mathrm{CI}=\bigl[Q_{\alpha}(\sigma^*),\,Q_{1-\alpha}(\sigma^*)\bigr]
-$$
+```
 
 - **CUSUM regime-change proxy**  
-$$
+
+```math
 S_t=\sum_{i=1}^{t}\frac{r_i}{\sigma},\quad
 \mathrm{CUSUM}=\max_t S_t-\min_t S_t
-$$
+```
 ---
 
 **Bottom line**
