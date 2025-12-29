@@ -27,7 +27,8 @@ const ASSUMPTIONS_YAML = "assumptions/assumptions.yaml"
 const PRICE_COL  = :Close               # default; can be overridden by assumptions.yaml
 const OUTPUT_PNG = "plots/perturbation_overlays.png"
 const OUTPUT_REPORT = "reports/decision_validity_report.txt"   # default; can be overridden by assumptions.yaml
-
+const MIN_ROWS_DEFAULT = 200      # minimum number of price bars required (heuristic)
+const MIN_DAYS_DEFAULT = 20       # minimum number of distinct trading days required (heuristic)
 # Perturbations
 const VOL_SCALES    = [0.5, 1.0, 1.5, 2.0]   # scale factor for σ (via log-return scaling)
 const WINDOW_SHIFTS = [0, 3, 6, 12]          # shift in rows (hours) for "start later" overlays
@@ -106,7 +107,43 @@ Heuristics (v0):
 Returns a one-sentence statement like:
 "Decision unstable: dominated by window-length choice and overnight gaps."
 """
-function decision_verdict(summary::Dict)::Dict
+function decision_verdict(
+    summary::Dict;
+    n_rows::Int,
+    n_days::Int,
+    min_rows::Int=MIN_ROWS_DEFAULT,
+    min_days::Int=MIN_DAYS_DEFAULT
+)::Dict
+
+    need_rows = max(0, min_rows - n_rows)
+    need_days = max(0, min_days - n_days)
+
+    if need_rows > 0 || need_days > 0
+        extra = String[]
+        need_rows > 0 && push!(extra, "$(need_rows) more bars (rows)")
+        need_days > 0 && push!(extra, "$(need_days) more trading days")
+        extra_str = join(extra, " and ")
+
+        sentence = "Decision verdict unavailable: insufficient historical data (have $(n_rows) bars across $(n_days) days; require at least $(min_rows) bars and $(min_days) days)."
+        recommendation = "Collect $(extra_str) before making any buy/sell decision based on this uncertainty analysis."
+
+        return Dict(
+            :severity => :unavailable,
+            :dominant_drivers => String[],
+            :invalidity_probability => 1.0,
+            :sentence => sentence,
+            :recommendation => recommendation,
+            :data_needed => Dict(
+                :need_rows => need_rows,
+                :need_days => need_days,
+                :min_rows => min_rows,
+                :min_days => min_days,
+                :n_rows => n_rows,
+                :n_days => n_days
+            )
+        )
+    end
+
     base = get(summary, :base_volatility, NaN)
     if !(base isa Real) || isnan(base) || base <= 0
         # Return a structured verdict with minimal info
@@ -143,6 +180,21 @@ function decision_verdict(summary::Dict)::Dict
     if out isa Real && !isnan(float(out))
         drop = (base - float(out)) / base
         push!(drivers, :single_jump_outlier => drop)
+    end
+
+        # serial dependence / effective sample size collapse
+    neff = get(summary, :effective_sample_size, nothing)
+    if neff isa Integer
+        n = max(1, n_rows - 1)
+        frac_lost = 1.0 - (float(neff) / float(n))
+        push!(drivers, :serial_dependence => frac_lost)
+    end
+
+    # regime change proxy (CUSUM)
+    cus = get(summary, :cusum_score, NaN)
+    cthr = get(summary, :cusum_threshold, NaN)
+    if cus isa Real && cthr isa Real && !isnan(float(cus)) && !isnan(float(cthr)) && float(cthr) > 0
+        push!(drivers, :regime_change => float(cus) / float(cthr))
     end
 
     # 4) liquidity regime dominance (if available)
@@ -206,6 +258,8 @@ function decision_verdict(summary::Dict)::Dict
                       d == :low_liquidity_regime ? "low-liquidity regime" :
                       d == :price_definition   ? "price-definition (Close vs AdjClose)" :
                       d == :market_factor      ? "market-factor dominance" :
+                      d == :serial_dependence ? "serial dependence (effective sample size)" :
+                      d == :regime_change     ? "regime change (CUSUM)" :
                                                   String(d)
 
     drivers_str = join((name(p.first) for p in top), " and ")
@@ -229,6 +283,42 @@ function decision_verdict(summary::Dict)::Dict
     )
 end
 
+# -----------------------------
+# Action semantics + placeholder decision mapping
+# -----------------------------
+
+"""
+Placeholder mapping from data -> BUY/SELL/HOLD semantics.
+NOT a recommendation — it defines what “act” means.
+
+Momentum signal:
+m = log(p_end / p_end-H)
+
+Act if |m| > threshold_sigma * sigma_base * sqrt(H).
+"""
+function action_from_data(p::Vector{Float64}, summary::Dict;
+                          horizon_hours::Int=24, threshold_sigma::Real=0.5)
+
+    n = length(p)
+    n < 5 && return (:HOLD, NaN, NaN)
+
+    H = clamp(horizon_hours, 1, n-1)
+    m = log(p[end] / p[end-H])
+
+    σ = get(summary, :base_volatility, NaN)
+    if !(σ isa Real) || isnan(float(σ)) || σ <= 0
+        return (:HOLD, m, NaN)
+    end
+
+    thr = float(threshold_sigma) * float(σ) * sqrt(H)
+    if m > thr
+        return (:BUY, m, thr)
+    elseif m < -thr
+        return (:SELL, m, thr)
+    else
+        return (:HOLD, m, thr)
+    end
+end
 # -----------------------------
 # Report writer
 # -----------------------------
@@ -370,6 +460,78 @@ function reconstruct_from_log_returns(p0::Real, r::AbstractVector{<:Real})
         out[i] = out[1] * exp(acc)
     end
     return out
+end
+
+# -----------------------------
+# Uncertainty tools
+# -----------------------------
+
+"Robust scale estimate via MAD (median absolute deviation)."
+function mad_sigma(x::AbstractVector{<:Real}; c::Real=1.4826)
+    m = median(x)
+    mad = median(abs.(x .- m))
+    return float(c) * float(mad)
+end
+
+"""
+Effective sample size for correlated time series.
+
+n_eff ≈ n / (1 + 2 * Σ ρ_k), k=1..K
+Correlation reduces independent information (physics/stat).
+"""
+function effective_sample_size(r::AbstractVector{<:Real}; maxlag::Int=12)
+    n = length(r)
+    n < 5 && return n
+    μ = mean(r)
+    x = float.(r .- μ)
+    v = sum(abs2, x) / n
+    v == 0 && return n
+
+    s = 0.0
+    K = min(maxlag, n - 2)
+    for k in 1:K
+        num = sum(x[1:end-k] .* x[1+k:end]) / (n - k)
+        ρ = num / v
+        ρ = clamp(ρ, -0.5, 0.95)
+        s += ρ
+    end
+    denom = 1 + 2s
+    denom <= 0 && return n
+    return max(1, Int(round(n / denom)))
+end
+
+"Block bootstrap for volatility (preserves short-range dependence)."
+function block_bootstrap_vol(r::AbstractVector{<:Real}; B::Int=500, blocklen::Int=6, estimator::Symbol=:std, mad_c::Real=1.4826)
+    n = length(r)
+    n < 5 && return Float64[]
+    bl = clamp(blocklen, 1, n)
+    nblocks = Int(ceil(n / bl))
+
+    out = Vector{Float64}(undef, B)
+    rF = float.(r)
+
+    for b in 1:B
+        idxs = Int[]
+        for _ in 1:nblocks
+            start = rand(1:(n - bl + 1))
+            append!(idxs, start:(start + bl - 1))
+        end
+        idxs = idxs[1:n]
+        sample = rF[idxs]
+        out[b] = estimator == :mad ? mad_sigma(sample; c=mad_c) : std(sample)
+    end
+    return out
+end
+
+"CUSUM-like regime change score (proxy, v0)."
+function cusum_score(r::AbstractVector{<:Real}; sigma::Real)
+    n = length(r)
+    n < 5 && return 0.0
+    σ = float(sigma)
+    σ <= 0 && return 0.0
+    z = float.(r) ./ σ
+    cs = cumsum(z)
+    return maximum(cs) - minimum(cs)
 end
 
 # -----------------------------
@@ -745,13 +907,42 @@ function stability_summary(
     window_lengths::Vector{Int}=[6, 12, 24],
     low_liq_q::Real=LOW_LIQUIDITY_Q,
     benchmark_ticker::AbstractString=BENCHMARK_TICKER,
-    benchmark_enabled::Bool=false
+    benchmark_enabled::Bool=false,
+    autocorr_max_lag::Int=12,
+    robust_mad_c::Real=1.4826,
+    bootstrap_enabled::Bool=true,
+    bootstrap_runs::Int=500,
+    blocklen::Int=6,
+    ci_lo::Real=0.05,
+    ci_hi::Real=0.95,
+    cusum_enabled::Bool=true,
+    cusum_threshold::Real=8.0
 )
     base_vol = std(log_returns(p))
+
+    r = log_returns(p)
+    base_mad = mad_sigma(r; c=robust_mad_c)
+    n_eff = effective_sample_size(r; maxlag=autocorr_max_lag)
 
     win = window_length_sensitivity(p; lengths=window_lengths)
     out = outlier_sensitivity(p; k=1)
     gaps = overnight_gap_series(t, p)
+
+    boot_ci = (NaN, NaN)
+    boot_width = NaN
+    if bootstrap_enabled
+        boot = block_bootstrap_vol(r; B=bootstrap_runs, blocklen=blocklen, estimator=:std, mad_c=robust_mad_c)
+        if !isempty(boot)
+            qs = quantile(boot, [float(ci_lo), float(ci_hi)])
+            boot_ci = (qs[1], qs[2])
+            boot_width = qs[2] - qs[1]
+        end
+    end
+
+    cus = NaN
+    if cusum_enabled
+        cus = cusum_score(r; sigma=(base_mad > 0 ? base_mad : base_vol))
+    end
 
     src = price_source_sensitivity(df)
     liq = liquidity_sensitivity(df; q=low_liq_q)
@@ -766,6 +957,12 @@ function stability_summary(
         :price_source => src,
         :liquidity => liq,
         :market_factor => mkt,
+        :base_volatility_mad => base_mad,
+        :effective_sample_size => n_eff,
+        :bootstrap_vol_ci => boot_ci,
+        :bootstrap_vol_ci_width => boot_width,
+        :cusum_score => cus,
+        :cusum_threshold => cusum_threshold,
     )
 end
 
@@ -790,8 +987,36 @@ if abspath(PROGRAM_FILE) == @__FILE__
     bench_enabled = Bool(get_nested(assumptions, ["benchmark","enabled"], false))
     bench_ticker  = String(get_nested(assumptions, ["benchmark","ticker"], BENCHMARK_TICKER))
 
+
+        min_rows = Int(get_nested(assumptions, ["decision","min_rows"], MIN_ROWS_DEFAULT))
+    min_days = Int(get_nested(assumptions, ["decision","min_trading_days"], MIN_DAYS_DEFAULT))
+
+    autocorr_max_lag = Int(get_nested(assumptions, ["returns","autocorr_max_lag"], 12))
+    mad_c = Float64(get_nested(assumptions, ["volatility","mad_to_sigma"], 1.4826))
+
+    boot_enabled = Bool(get_nested(assumptions, ["risk_model","bootstrap_enabled"], true))
+    boot_runs = Int(get_nested(assumptions, ["risk_model","bootstrap_runs"], 500))
+    boot_blocklen = Int(get_nested(assumptions, ["risk_model","block_bootstrap_blocklen"], 6))
+    ci = get_nested(assumptions, ["risk_model","bootstrap_ci"], [0.05, 0.95])
+    ci_lo = Float64(ci[1])
+    ci_hi = Float64(ci[2])
+
+    cusum_enabled = Bool(get_nested(assumptions, ["market_structure","cusum_enabled"], true))
+    cusum_threshold = Float64(get_nested(assumptions, ["market_structure","cusum_threshold"], 8.0))
+
+    action_buy = String(get_nested(assumptions, ["decision","action_semantics","buy"], "enter or increase a long position"))
+    action_sell = String(get_nested(assumptions, ["decision","action_semantics","sell"], "reduce or exit a long position"))
+    action_hold = String(get_nested(assumptions, ["decision","action_semantics","hold"], "do nothing / wait for more data"))
+
+    rule_kind = String(get_nested(assumptions, ["decision","rule","kind"], "momentum"))
+    rule_horizon = Int(get_nested(assumptions, ["decision","rule","horizon_hours"], 24))
+    rule_thr_sigma = Float64(get_nested(assumptions, ["decision","rule","threshold_sigma"], 0.5))
+
     df = load_prices(input_csv)
     t, p = extract_series(df; price_col=price_primary)
+
+    n_rows = nrow(df)
+    n_days = length(unique(Date.(t)))
 
     println("Loaded $(length(p)) rows")
     println("Time range: ", first(t), " → ", last(t))
@@ -817,20 +1042,39 @@ if abspath(PROGRAM_FILE) == @__FILE__
     )
 
     overlay_plot(t, p; spread_bps=spread_bps, outpath=out_png)
-    summary = stability_summary(
-        df, p, t;
-        window_lengths=window_lengths,
-        low_liq_q=low_liq_q,
-        benchmark_ticker=bench_ticker,
-        benchmark_enabled=bench_enabled
-    )
+summary = stability_summary(
+    df, p, t;
+    window_lengths=window_lengths,
+    low_liq_q=low_liq_q,
+    benchmark_ticker=bench_ticker,
+    benchmark_enabled=bench_enabled,
+    autocorr_max_lag=autocorr_max_lag,
+    robust_mad_c=mad_c,
+    bootstrap_enabled=boot_enabled,
+    bootstrap_runs=boot_runs,
+    blocklen=boot_blocklen,
+    ci_lo=ci_lo,
+    ci_hi=ci_hi,
+    cusum_enabled=cusum_enabled,
+    cusum_threshold=cusum_threshold
+)
     println("Stability / uncertainty summary:")
     for (k, v) in summary
         println("  ", k, " => ", v)
     end
-    verdict = decision_verdict(summary)
+    verdict = decision_verdict(summary; n_rows=n_rows, n_days=n_days, min_rows=min_rows, min_days=min_days)
     println(verdict[:sentence])
     println(verdict[:recommendation])
+    println("Action semantics: BUY=$(action_buy); SELL=$(action_sell); HOLD=$(action_hold)")
+
+    # IMPORTANT: we never suggest acting unless the decision is stable enough.
+    if rule_kind == "momentum" && (verdict[:severity] == :stable || verdict[:severity] == :conditional_stability)
+        act, m, thr = action_from_data(p, summary; horizon_hours=rule_horizon, threshold_sigma=rule_thr_sigma)
+        println("Placeholder action (", rule_kind, "): ", act, "  (momentum=", m, ", threshold=", thr, ")")
+        println("Note: this defines what 'act' would mean IF the decision is stable; it is NOT financial advice.")
+    else
+        println("Placeholder action: HOLD (decision not stable enough, insufficient data, or rule disabled)")
+    end
     write_report(out_report; assumptions_applied=assumptions_applied, summary=summary, verdict=verdict, plot_path=out_png)
     println("Saved report to $(out_report)")
     println("Saved overlay plot to $(out_png)")
