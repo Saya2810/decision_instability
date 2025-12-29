@@ -1,135 +1,32 @@
-# decision_instability
-A decision-theoretic diagnostic tool for quantifying when financial decisions are ill-posed (mainly stocks).
-
-```
-project/
-├── data/
-│   ├── historical_prices.csv
-│   └── download_data.py
-│
-├── assumptions/
-│   └── assumptions.yaml
-│
-├── engine/
-│   └── uncertainty_analysis.jl
-│
-├── reports/
-│   └── decision_validity_report.txt
-│
-└── plots/
-    └── perturbation_overlays.png
-```
-
----
-
-
 ## What do we learn from the perturbation overlay plot?
 
----
+**Purpose**
+- The plot diagnoses whether a financial decision is **robust or ill‑posed**.
+- The goal is **decision validity**, not price prediction.
 
-## When should I act – and when should I not?
+**How the plot is constructed**
+- Blue line: observed historical price path
+- Thin colored lines: price paths under single‑assumption violations
+  - volatility scaling
+  - window shifts
+  - execution friction
+- Thick red line: **worst‑case envelope** (minimum across all perturbations)
 
-Use the perturbation overlay plot as a **decision filter**, not a trading signal.  
-It answers one concrete question:
+**How to read it**
+- If curves keep the same shape → dynamics are stable
+- If curves diverge or cross → decision is unstable
+- If curves are parallel but shifted → level is uncertain, direction may be usable
 
-> *Is it defensible to act on this historical data, or should I not act at all?*
+**When to act**
+- ✔ Shapes align, red envelope preserves trend → cautious directional action
+- ⚠ Parallel shift only → direction OK, sizing/targets unreliable
+- ✘ Curves diverge or envelope reverses trend → do not act
 
-### You may consider acting if:
-- All perturbation curves have **similar shape** (they move together)
-- The red uncertainty envelope does **not reverse the trend**
-- The verdict is **stable** or **conditionally stable**
+**One hard rule**
+> If your decision fails under the red envelope, it is not robust.
 
-In this case:
-- Direction may be reliable
-- Act with **reduced position size**
-- Prefer timing-based decisions over fixed price targets
-
----
-
-### Act only with strong caution if:
-- The red envelope is mostly **parallel but shifted** up or down
-- The verdict is **fragile**
-- Uncertainty is dominated by window choice or volatility scaling
-
-In this case:
-- Direction may still be correct
-- Absolute price levels, targets, and leverage are unreliable
-
----
-
-### You should NOT act if:
-- Perturbation curves diverge strongly or cross
-- The red envelope invalidates or reverses the original trend
-- Overnight gaps or single outliers dominate
-- The verdict is **unstable** or **decision unavailable**
-
-In this case:
-- The data do not support a defensible decision
-- The correct action is **not trading** and gathering more data
-
----
-
-### One hard rule
-
-> **If your decision would fail under the red envelope, it is not robust.**
-
-The file `plots/perturbation_overlays.png` is the **core diagnostic output** of this project.  
-It does **not** attempt to predict prices. Instead, it visualizes **decision instability under uncertainty**.
-
-### How to read the plot
-
-- **Blue bold line (`original`)**  
-  The observed historical price path (baseline).
-
-- **Thin colored lines (individual perturbations)**  
-  Each line corresponds to *one violated assumption*, for example:
-  - `vol_scale = …` → higher/lower volatility than observed  
-  - `shift = …` → starting the analysis a few hours later  
-  - `friction = … bps` → small execution / transaction costs  
-
-  These lines answer:
-  > *“What would the price path look like if this single assumption were slightly wrong?”*
-
-- **Bold red line: `ALL uncertainties (min envelope)`**  
-  This is the **aggregate uncertainty path**:
-  - At each time, it takes the **worst‑case (minimum) price** across *all* perturbations.
-  - It represents the most conservative outcome compatible with the tested uncertainties.
-
-  Conceptually, this is:
-  > *“What is the most pessimistic price evolution consistent with all plausible assumption violations?”*
-
-### What this tells us (important)
-
-1. **Decision sensitivity**
-   - If the red envelope diverges strongly from the original path,  
-     then *small assumption errors lead to large outcome changes*.
-   - Any decision based on the original line alone is therefore fragile.
-
-2. **Dominant uncertainty channels**
-   - Large separations caused by specific perturbations (e.g. window shifts or volatility scaling)
-     indicate *which assumptions matter most*.
-   - This is more informative than a single volatility number.
-
-3. **Ill‑posed decisions**
-   - If many perturbations fan out quickly, the problem is **ill‑posed**:
-     the data do not support a stable conclusion.
-   - In such cases, asking “up or down?” is the wrong question.
-
-4. **Worst‑case framing**
-   - The red envelope is *not a forecast*.
-   - It is a **validity boundary**: a region where decisions remain defensible.
-   - This aligns with the project’s goal of **robustness over accuracy**.
-
-### Key takeaway
-
-> **The value of this framework is not predicting returns,  
-> but identifying when a financial decision is unreliable because it depends too strongly on hidden assumptions.**
-
-In other words:
-- The plot shows *how you can be wrong*,
-- why you can be wrong,
-- and whether that wrongness matters for your decision.
-
+**Key takeaway**
+- The plot shows **how you can be wrong**, not what will happen.
 
 ---
 
@@ -236,7 +133,7 @@ Each produces an alternative price path \( p'(t) \).
 Returns are scaled by a factor \( s \):
 
 $$
-r'_i = s \cdot r_i, \quad s \in \texttt{VOL\_SCALES}
+r'_i = s \cdot r_i,\quad s \in \mathrm{VOL\_SCALES}
 $$
 
 Interpretation:  
