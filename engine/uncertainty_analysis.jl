@@ -362,11 +362,85 @@ function write_report(
             println(io, " - ", d)
         end
         println(io)
-        println(io, "NUMERICAL SUMMARY")
-        println(io, "-----------------")
-        for (k, v) in summary
-            println(io, " - ", k, ": ", v)
+        println(io, "NUMERICAL SUMMARY (more readable)")
+        println(io, "--------------------------------")
+
+        # Helpers: format returns-volatility-like numbers as percentages per bar
+        fmt_pct(x) = string(round(100 * float(x); digits=2), "%")
+        fmt_num(x) = string(round(float(x); digits=4))
+        function fmt_vol(x)
+            (x isa Real && !isnan(float(x))) ? fmt_pct(x) : "n/a"
         end
+
+        base = get(summary, :base_volatility, NaN)
+        madv = get(summary, :base_volatility_mad, NaN)
+        og   = get(summary, :overnight_gap_std, NaN)
+        boot_ci = get(summary, :bootstrap_vol_ci, (NaN, NaN))
+        boot_w  = get(summary, :bootstrap_vol_ci_width, NaN)
+        neff = get(summary, :effective_sample_size, missing)
+        cus  = get(summary, :cusum_score, NaN)
+        cthr = get(summary, :cusum_threshold, NaN)
+
+        println(io, " - Base volatility (std, per bar):              ", fmt_vol(base))
+        println(io, " - Robust volatility (MAD→sigma, per bar):      ", fmt_vol(madv))
+        if (base isa Real && !isnan(float(base)) && base > 0) && (madv isa Real && !isnan(float(madv)))
+            println(io, " - Robust/Std ratio:                            ", fmt_num(madv / base))
+        end
+
+        println(io, " - Overnight gap std (per day boundary):         ", fmt_vol(og))
+        if (base isa Real && !isnan(float(base)) && base > 0) && (og isa Real && !isnan(float(og)))
+            println(io, " - Overnight/Base ratio:                         ", fmt_num(float(og) / float(base)))
+        end
+
+        # Window-length sensitivity (prints as percentages)
+        win = get(summary, :window_length_volatility, Dict())
+        if win isa Dict && !isempty(win)
+            parts = String[]
+            for (L, v) in sort!(collect(win); by=x->x[1])
+                push!(parts, string(L, "h: ", fmt_vol(v)))
+            end
+            println(io, " - Volatility by window length:                  ", join(parts, ", "))
+        else
+            println(io, " - Volatility by window length:                  n/a")
+        end
+
+        outv = get(summary, :outlier_removed_volatility, NaN)
+        println(io, " - Volatility after removing top jump:           ", fmt_vol(outv))
+        if (base isa Real && !isnan(float(base)) && base > 0) && (outv isa Real && !isnan(float(outv)))
+            println(io, " - Outlier dominance (drop/base):                ", fmt_num((float(base) - float(outv)) / float(base)))
+        end
+
+        # Bootstrap CI
+        if boot_ci isa Tuple && length(boot_ci) == 2
+            lo, hi = boot_ci
+            println(io, " - Bootstrap vol CI (per bar):                   [", fmt_vol(lo), ", ", fmt_vol(hi), "]")
+        else
+            println(io, " - Bootstrap vol CI (per bar):                   n/a")
+        end
+        println(io, " - Bootstrap CI width (per bar):                 ", fmt_vol(boot_w))
+
+        # Effective sample size
+        if neff === missing
+            println(io, " - Effective sample size (n_eff):                n/a")
+        else
+            println(io, " - Effective sample size (n_eff):                ", neff)
+        end
+
+        # CUSUM regime proxy
+        if cus isa Real && cthr isa Real && !isnan(float(cus)) && !isnan(float(cthr)) && float(cthr) > 0
+            println(io, " - CUSUM score / threshold:                      ", fmt_num(float(cus) / float(cthr)),
+                    "  (raw=", fmt_num(cus), ", thr=", fmt_num(cthr), ")")
+        else
+            println(io, " - CUSUM score / threshold:                      n/a")
+        end
+
+        # Availability blocks (kept brief)
+        src = get(summary, :price_source, Dict())
+        liq = get(summary, :liquidity, Dict())
+        mkt = get(summary, :market_factor, Dict())
+        println(io, " - Price source check available:                 ", (src isa Dict && get(src, :available, false)) ? "yes" : "no")
+        println(io, " - Liquidity check available:                    ", (liq isa Dict && get(liq, :available, false)) ? "yes" : "no")
+        println(io, " - Market factor check available:                ", (mkt isa Dict && get(mkt, :available, false)) ? "yes" : "no")
         println(io)
         println(io, "ASSUMPTIONS APPLIED")
         println(io, "-------------------")
@@ -824,16 +898,19 @@ function overlay_plot(
 
     plt = plot(
         x, p;
-        label="original",
+        label="Observed",
         linewidth=4,
-        title="Perturbation overlays",
+        title="Decision robustness stress test",
         xlabel="time (UTC)",
-        ylabel=String(PRICE_COL),
+        ylabel="price",
+        legend=:topright,
+        legendfontsize=9,
     )
 
-    # Collect all perturbation paths so we can build ONE aggregate "uncertainty" line.
-    # We define the aggregate as the pointwise MIN across all perturbations (conservative / worst-case price path).
-    # If you prefer the upper envelope, replace `minimum` with `maximum` below.
+    # Collect all perturbation paths so we can build BOTH aggregate "uncertainty" envelopes.
+    # We compute envelopes across perturbations:
+    # - Worst = pointwise MIN (conservative)
+    # - Best  = pointwise MAX (optimistic)
     pert_paths = Vector{Vector{Float64}}()
 
     # Volatility scaling overlays
@@ -842,13 +919,13 @@ function overlay_plot(
             continue
         end
         p2 = perturb_volatility(p; scale=s)
-        plot!(plt, x, p2; label="vol_scale=$(s)", linewidth=1)
+        plot!(plt, x, p2; label="Vol ×$(s)", linewidth=1)
         push!(pert_paths, p2)
     end
 
     # Execution friction overlay (single stress scenario)
     p_fric = perturb_execution_friction(p; spread_bps=spread_bps, trades=1)
-    plot!(plt, x, p_fric; label="friction=$(spread_bps)bps", linewidth=1)
+    plot!(plt, x, p_fric; label="Cost $(spread_bps)bps", linewidth=1)
     push!(pert_paths, p_fric)
 
     # Window shift overlays
@@ -857,13 +934,15 @@ function overlay_plot(
             continue
         end
         _, p2 = perturb_window_shift(t, p; shift=sh)
-        plot!(plt, x, p2; label="shift=$(sh)h", linewidth=1)
+        plot!(plt, x, p2; label="Shift +$(sh)h", linewidth=1)
         push!(pert_paths, p2)
     end
 
     if !isempty(pert_paths)
-        # pointwise min ignoring NaNs (window shifts introduce NaNs at the beginning)
-        agg = similar(p)
+        # pointwise envelopes ignoring NaNs (window shifts introduce NaNs at the beginning)
+        worst = similar(p)
+        best  = similar(p)
+
         for i in eachindex(p)
             vals = Float64[]
             for pp in pert_paths
@@ -872,10 +951,17 @@ function overlay_plot(
                     push!(vals, v)
                 end
             end
-            agg[i] = isempty(vals) ? NaN : minimum(vals)
+            if isempty(vals)
+                worst[i] = NaN
+                best[i]  = NaN
+            else
+                worst[i] = minimum(vals)   # conservative envelope
+                best[i]  = maximum(vals)   # optimistic envelope
+            end
         end
 
-        plot!(plt, x, agg; label="ALL uncertainties (min envelope)", linewidth=5, color=:red)
+        plot!(plt, x, worst; label="Worst", linewidth=5, color=:red)
+        plot!(plt, x, best;  label="Best",  linewidth=5, color=:green)
     end
 
     mkpath(dirname(outpath))

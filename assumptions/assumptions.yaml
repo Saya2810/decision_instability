@@ -172,7 +172,7 @@ decision:
   # Why: defines what "future relevance" means for this decision engine.
   decision_type: directional
   # Why: directional vs allocation vs hedging changes what is "stable".
-    min_rows: 200
+  min_rows: 133
   # Why: minimum number of bars required before trusting dominance metrics.
   min_trading_days: 20
   # Why: minimum distinct trading days so overnight/regime tests are meaningful.

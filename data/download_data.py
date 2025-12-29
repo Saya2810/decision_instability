@@ -47,7 +47,7 @@ INTERVAL = "1h"
 START_DATE = None  # e.g. "2025-12-20"
 END_DATE = None    # e.g. "2025-12-27"
 # Option B) rolling window (used if START_DATE or END_DATE is None)
-ROLLING_DAYS = 20
+ROLLING_DAYS = 30
 
 # Output path (relative to repo root)
 OUTPUT_CSV = Path("data/historical_prices.csv")

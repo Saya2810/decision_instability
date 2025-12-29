@@ -1,4 +1,6 @@
-##the perturbation overlay plot
+## the perturbation overlay plot
+
+"If a plot makes you feel like you learned nothing, but it prevents you from making a bad decision, it did its job."
 
 - Same shape → dynamics are stable  
 - Diverging / crossing curves → decision unstable  

@@ -1,11 +1,11 @@
 DECISION VALIDITY REPORT
 ========================
 
-Generated (UTC): 2025-12-29 17:25:16
+Generated (UTC): 2025-12-29 18:22:33
 
 SUMMARY STATEMENT
 -----------------
-Decision unstable: dominated by overnight gaps and window-length choice.
+Decision unstable: dominated by regime change (CUSUM) and overnight gaps.
 You should with 85.0% probability NOT base a buy/sell decision solely on this historical data.
 
 INTERPRETATION
@@ -19,18 +19,26 @@ assumptions lead to materially different outcomes.
 
 DOMINANT UNCERTAINTY SOURCES
 ----------------------------
+ - regime_change
  - overnight_gaps
- - window_length
 
-NUMERICAL SUMMARY
------------------
- - window_length_volatility: Dict(6 => 0.0017287791856891246, 12 => 0.002735519044043407, 24 => 0.0022177625430776643)
- - base_volatility: 0.0037126634970965546
- - outlier_removed_volatility: 0.0033507773228710533
- - liquidity: Dict{Symbol, Bool}(:available => 0)
- - price_source: Dict{Symbol, Bool}(:available => 0)
- - market_factor: Dict{Symbol, Bool}(:benchmark_enabled => 0, :available => 0)
- - overnight_gap_std: 0.004565551355941477
+NUMERICAL SUMMARY (more readable)
+--------------------------------
+ - Base volatility (std, per bar):              0.35%
+ - Robust volatility (MAD→sigma, per bar):      0.28%
+ - Robust/Std ratio:                            0.805
+ - Overnight gap std (per day boundary):         0.49%
+ - Overnight/Base ratio:                         1.3764
+ - Volatility by window length:                  6h: 0.22%, 12h: 0.17%, 24h: 0.22%
+ - Volatility after removing top jump:           0.33%
+ - Outlier dominance (drop/base):                0.0701
+ - Bootstrap vol CI (per bar):                   [0.29%, 0.41%]
+ - Bootstrap CI width (per bar):                 0.12%
+ - Effective sample size (n_eff):                203
+ - CUSUM score / threshold:                      2.6975  (raw=21.5802, thr=8.0)
+ - Price source check available:                 no
+ - Liquidity check available:                    no
+ - Market factor check available:                no
 
 ASSUMPTIONS APPLIED
 -------------------
