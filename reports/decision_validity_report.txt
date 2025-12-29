@@ -1,0 +1,49 @@
+DECISION VALIDITY REPORT
+========================
+
+Generated (UTC): 2025-12-29 14:35:39
+
+SUMMARY STATEMENT
+-----------------
+Decision unstable: dominated by overnight gaps and window-length choice.
+You should with 85.0% probability NOT base a buy/sell decision solely on this historical data.
+
+INTERPRETATION
+--------------
+This assessment evaluates how sensitive a trading decision is to
+reasonable assumption changes (time window choice, volatility regime,
+overnight gaps, execution friction, and data conventions).
+
+A high invalidity probability means that small, plausible changes in
+assumptions lead to materially different outcomes.
+
+DOMINANT UNCERTAINTY SOURCES
+----------------------------
+ - overnight_gaps
+ - window_length
+
+NUMERICAL SUMMARY
+-----------------
+ - window_length_volatility: Dict(6 => 0.0015689106375135606, 12 => 0.0027357345599965583, 24 => 0.002236917009589487)
+ - base_volatility: 0.002236917009589487
+ - outlier_removed_volatility: 0.0017940702548301256
+ - liquidity: Dict{Symbol, Bool}(:available => 0)
+ - price_source: Dict{Symbol, Bool}(:available => 0)
+ - market_factor: Dict{Symbol, Bool}(:benchmark_enabled => 0, :available => 0)
+ - overnight_gap_std: 0.004595050045052901
+
+ASSUMPTIONS APPLIED
+-------------------
+ - overlay_out_png = plots/perturbation_overlays.png
+ - low_liq_q = 0.1
+ - price_primary = Close
+ - spread_bps = 10.0
+ - report_path = reports/decision_validity_report.txt
+ - input_csv = data/historical_prices.csv
+ - benchmark = (disabled)
+ - window_lengths = [6, 12, 24]
+
+NOTE
+----
+This report does NOT predict prices.
+It evaluates whether a decision based on this data is defensible.

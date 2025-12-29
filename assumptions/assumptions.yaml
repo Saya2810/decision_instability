@@ -1,0 +1,175 @@
+# ============================================================
+# assumptions.yaml
+#
+# Explicit assumptions underlying the uncertainty analysis.
+# All uncertainty metrics are conditional on these assumptions.
+#
+# Principle:
+# - Each knob here defines "what world we assume".
+# - The uncertainty engine should treat these as FIRST-CLASS inputs.
+# - If any of these assumptions is wrong, reported stability can fail.
+# ============================================================
+
+data:
+  source: yahoo_finance
+  # Why: we assume the data vendor is consistent; different vendors can differ (rounding, corporate actions, timestamps).
+  frequency: 1h
+  # Why: "1h" on Yahoo is market-hours bars, not 24/7 sampling; this affects sample size and gap structure.
+  timezone: UTC
+  # Why: we analyze in a single canonical timezone to avoid DST/session confusion.
+  market_hours_only: true
+  # Why: for equities, most meaningful trading happens in regular sessions; outside hours behave differently.
+  include_prepost: false
+  # Why: pre/post-market has different liquidity and microstructure; mixing can bias volatility/jumps.
+  drop_incomplete_last_bar: true
+  # Why: the most recent bar can be partially formed and unstable depending on when you download.
+  timestamp_alignment: end_of_bar
+  # Why: assumes timestamps correspond to bar end; if start-of-bar, overnight gap logic changes.
+  missing_data_policy: keep_gaps
+  # Why: gaps are information (halts, holidays, missing bars); we do NOT interpolate by default.
+  corporate_calendar_assumed_correct: true
+  # Why: holidays/half-days matter; mis-specified calendars distort "overnight" and window slicing.
+
+price_definition:
+  primary: Close
+  # Why: Close is the common decision anchor for many strategies; but it's not always the traded price for execution.
+  alternative: AdjClose
+  # Why: AdjClose reflects splits/dividends adjustments and changes long-run return statistics.
+  assume_corporate_actions_negligible: false
+  # Why: if true, Close≈AdjClose; if false, decisions might be accounting-sensitive.
+  use_mid_price_proxy: false
+  # Why: Yahoo has no bid/ask; if you later use a provider with mid, analysis should switch.
+  rounding_noise_relevant: true
+  # Why: data is rounded; at small horizons, rounding noise can matter for return tails.
+  price_outlier_policy: keep
+  # Why: do not auto-clean prices; outliers are a decision risk unless proven to be bad ticks.
+
+returns:
+  type: log
+  # Why: log-returns are additive across time and match continuous-time intuition; not always best for extreme moves.
+  assume_continuity: true
+  # Why: many perturbations (vol scaling) assume returns behave smoothly; jumps violate this.
+  assume_finite_variance: true
+  # Why: std/vol assumes finite variance; heavy tails can break interpretation.
+  heavy_tails_possible: true
+  # Why: we explicitly allow tail effects; this motivates outlier/jump sensitivity.
+  serial_dependence_ignored: false
+  # Why: returns can be autocorrelated at intraday scale; ignoring it can overstate effective sample size.
+  microstructure_noise_ignored: true
+  # Why: hourly bars reduce microstructure effects, but they don't fully remove them (bid-ask bounce, discreteness).
+  demeaning_method: none
+  # Why: by default we do not subtract mean; short-horizon means are noisy and can mislead.
+
+volatility:
+  estimator: standard_deviation
+  # Why: simplest volatility proxy; robust alternatives exist (MAD, Garman-Klass, Parkinson, EWMA).
+  assume_stationary_within_window: true
+  # Why: windowed stats assume stationarity; regime changes break it.
+  window_lengths_hours: [6, 12, 24]
+  # Why: window length choice is itself a major instability channel.
+  volatility_clustering_ignored: false
+  # Why: clustering is real; if ignored, you underestimate regime risk.
+  ewma_enabled: false
+  # Why: EWMA can handle clustering; disabled initially to keep v0 minimal.
+  ewma_lambda: 0.94
+  # Why: standard finance choice for daily; for hourly, lambda may need recalibration.
+  intraday_seasonality_ignored: false
+  # Why: volatility differs by hour (open/close), ignoring can bias estimates.
+
+drift:
+  assume_zero_drift_short_horizon: true
+  # Why: over hours-days, drift is tiny relative to volatility; treating drift as signal is usually unstable.
+  drift_estimator: sample_mean
+  # Why: kept explicit; but we do not trust drift as a robust decision input in v0.
+
+market_structure:
+  overnight_gaps_relevant: true
+  # Why: "close→next open" gaps can dominate risk; important for decisions with overnight holding.
+  assume_no_intraday_halts: false
+  # Why: halts happen; ignoring them hides gap risk (esp. on single names).
+  assume_regular_sessions: true
+  # Why: assumes typical session schedule; half-days can violate.
+  news_shock_process_ignored: false
+  # Why: macro/news events create discontinuities; we treat them as risk, not noise.
+  limit_up_down_ignored: true
+  # Why: some venues have price limits; for US equities it's rare, but matters in stress.
+  survivorship_bias_ignored: true
+  # Why: single ticker analysis avoids index survivorship issues; but if you later analyze universes, this must change.
+
+liquidity:
+  proxy: volume
+  # Why: volume is a weak proxy for liquidity; but available for free; spread isn't.
+  low_liquidity_quantile: 0.10
+  # Why: defines "thin market" regime for volatility comparison.
+  assume_execution_possible: true
+  # Why: assumes you can trade at/near quoted prices; false in stress.
+  volume_as_bar_liquidity: true
+  # Why: we map volume to the return interval; for r_i we associate volume at i+1 (bar volume).
+  liquidity_regime_changes_ignored: false
+  # Why: liquidity is regime-dependent; ignoring can hide instability.
+
+execution:
+  transaction_cost_model: fixed_bps
+  # Why: simplest friction model; not realistic but a critical robustness test.
+  assumed_spread_bps: 10.0
+  # Why: if your edge disappears at ~10bps, decision is fragile; tune per asset class.
+  slippage_model_ignored: false
+  # Why: slippage depends on volatility/liquidity; ignoring underestimates costs.
+  trades_per_decision: 1
+  # Why: number of trades strongly changes friction impact; must be explicit.
+  partial_fill_risk_ignored: true
+  # Why: especially in low liquidity; omitted for v0 but should be added for execution realism.
+
+outliers:
+  allow_tail_dominance: false
+  # Why: if true, you accept tail events as primary drivers; if false, you demand robustness to outliers.
+  outlier_definition: largest_absolute_return
+  # Why: simplest; later you might use EVT thresholds or robust z-scores.
+  outliers_removed_for_sensitivity: 1
+  # Why: stress-test whether 1 jump dominates volatility/inference.
+  bad_tick_possibility: true
+  # Why: free data may contain erroneous prints; treat as an uncertainty channel.
+
+benchmark:
+  enabled: false
+  # Why: beta/R² needs a benchmark series; you can enable once you merge benchmark into the CSV.
+  ticker: SPY
+  # Why: SPY is a common market proxy; can be changed per region/asset class.
+  assume_independence_from_market: false
+  # Why: stock-specific conclusions often fail if market factor dominates.
+  benchmark_column_convention: "Close_<TICKER>"
+  # Why: engine expects a merged column like Close_SPY unless you implement multi-ticker parsing.
+
+risk_model:
+  var_confidence_level: 0.95
+  # Why: VaR is sensitive to tails; kept explicit to avoid hidden assumptions later.
+  cvar_enabled: false
+  # Why: CVaR captures tail expectation; add when you implement tail-risk summaries.
+  gaussian_assumption_for_var: false
+  # Why: assuming normality is often wrong; keep it off by default.
+  stress_scenarios_enabled: true
+  # Why: uncertainty engines should include stress tests, not just smooth perturbations.
+
+decision:
+  horizon_hours: 24
+  # Why: defines what "future relevance" means for this decision engine.
+  decision_type: directional
+  # Why: directional vs allocation vs hedging changes what is "stable".
+  stability_required: true
+  # Why: engine is meant to output validity boundaries; stability is the central contract.
+  instability_threshold: undefined
+  # Why: threshold should be learned/declared per use-case (e.g., vol ratio > 1.5 triggers instability).
+  objective: "robustness_over_accuracy"
+  # Why: we optimize for not-being-wrong under perturbations, not for point prediction.
+  avoid_leakage_assumed: true
+  # Why: any use of future information invalidates evaluation; declared explicitly.
+  backtest_scope: exploratory
+  # Why: until you formalize, treat outputs as exploratory diagnostics, not production trading signals.
+
+reporting:
+  report_timezone: UTC
+  # Why: display consistency (session boundaries, overnight gaps).
+  save_plots: true
+  # Why: overlay plots are core interpretability for uncertainty objects.
+  save_summary_to_file: false
+  # Why: v0 prints to stdout; later write decision_validity_report.txt consistently.
